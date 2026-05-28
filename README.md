@@ -27,15 +27,15 @@ I recommend transparent PLA for glacier and painting the Terrain with Acrylcolor
 
 ## Input Data
 
-These variables are typically derived from glacier evolution models such as  
-[IGM](https://github.com/jouvetg/igm) and [OGGM](https://github.com/OGGM/oggm).
-The tool assumes structured NetCDF input with the following variables:
+The tool assumes structured NetCDF input with the following variables.
 
 - `x` — projected x-coordinates  
 - `y` — projected y-coordinates  
 - `thk` — ice thickness (m)  
 - `usurf` — glacier surface elevation (m a.s.l.)
 
+These variables are typically derived from glacier evolution models such as  
+[IGM](https://github.com/jouvetg/igm) and [OGGM](https://github.com/OGGM/oggm).
 
 ---
 
