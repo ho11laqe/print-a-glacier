@@ -1,8 +1,8 @@
 # print-a-glacier
 
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Status](https://img.shields.io/badge/status-research--prototype-orange.svg)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
+![Status](https://img.shields.io/badge/status-experimental-orange.svg)
 
 A Python framework for generating 3D-printable STL models of glaciers from NetCDF-based glacier datasets. The tool converts gridded ice thickness and surface elevation fields into physically consistent, watertight meshes suitable for additive manufacturing.
 
@@ -15,7 +15,7 @@ A Python framework for generating 3D-printable STL models of glaciers from NetCD
 - **Terrain model**: solid topographic base with vertical boundaries and optional elevation offset
 - **Glacier model**: watertight ice volume derived from ice thickness and surface elevation fields
 
-The workflow is designed for dual-material 3D printing, typically using opaque PLA for terrain and transparent PLA for glacier ice.
+I recommend transparent PLA for glacier.
 
 ---
 
@@ -25,7 +25,7 @@ The workflow is designed for dual-material 3D printing, typically using opaque P
 
 ---
 
-## Scientific Input Data
+## Input Data
 
 The tool assumes structured NetCDF input with the following variables:
 
@@ -38,27 +38,16 @@ These variables are typically derived from glacier evolution models or OGGM-styl
 
 ---
 
-## Methodology
+## Steps
 
 The pipeline consists of the following steps:
 
 1. Load structured NetCDF glacier dataset
 2. Compute bedrock topography:  
-   \( b = u_{surf} - h_{ice} \)
+   \( b = usurf - thk \)
 3. Extract glacier extent using thresholded ice thickness
 4. Construct surface triangulation via Delaunay tessellation
-5. Enforce watertight geometry by:
-   - Filtering long edges
-   - Reconstructing boundary walls
-6. Export STL geometry for additive manufacturing
+5. Filtering long edges
+6. Export STL geometry
 
 ---
-
-## Installation
-
-```bash
-git clone <repo-url>
-cd print-a-glacier
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
