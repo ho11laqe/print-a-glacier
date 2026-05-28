@@ -4,18 +4,18 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 ![Status](https://img.shields.io/badge/status-experimental-orange.svg)
 
-A Python framework for generating 3D-printable STL models of glaciers from NetCDF-based glacier datasets. The tool converts gridded ice thickness and surface elevation fields into physically consistent, watertight meshes suitable for additive manufacturing.
+A Python script for generating 3D-printable STL models of glaciers from NetCDF-based glacier datasets. The tool converts gridded ice thickness and surface elevation fields into watertight meshes suitable for 3D prints.
 
 ---
 
 ## Overview
 
-`print-a-glacier` reconstructs glacier geometry from numerical model output and satellite-derived datasets. It produces two complementary 3D models:
+`print-a-glacier` reconstructs glacier geometry from numerical model output and satellite-derived datasets. It produces two complementary 3D shapes:
 
-- **Terrain model**: solid topographic base with vertical boundaries and optional elevation offset
-- **Glacier model**: watertight ice volume derived from ice thickness and surface elevation fields
+- **Terrain**: solid topographic base with vertical boundaries and optional elevation offset
+- **Glacier**: watertight ice volume derived from ice thickness and surface elevation fields
 
-I recommend transparent PLA for glacier.
+I recommend transparent PLA for glacier and painting the Terrain with Acrylcolors after the printing.
 
 ---
 
@@ -34,8 +34,8 @@ The tool assumes structured NetCDF input with the following variables:
 - `thk` — ice thickness (m)  
 - `usurf` — glacier surface elevation (m a.s.l.)
 
-These variables are typically derived from glacier evolution models or OGGM-style simulations.
-
+These variables are typically derived from glacier evolution models such as  
+[IGM](https://github.com/jouvetg/igm) and [OGGM](https://github.com/OGGM/oggm).
 ---
 
 ## Steps
