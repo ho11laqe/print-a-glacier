@@ -2,19 +2,14 @@
 """
 Convert glacier NetCDF data to printable STL files.
 
-This script creates:
-1. A solid topography model with a flat base and vertical walls.
-2. A watertight glacier model using the glacier surface and bed topography.
-
-Expected NetCDF variables:
-- x
-- y
-- thk
-- usurf
+Creates:
+1. Topography STL (solid base terrain)
+2. Glacier STL (watertight ice volume)
 """
 
 from pathlib import Path
 from collections import defaultdict
+import argparse
 
 import numpy as np
 from netCDF4 import Dataset
@@ -25,7 +20,6 @@ from stl import mesh
 
 
 def grid_to_triangles(nx, ny, offset=0):
-    """Create triangular faces for a regular grid."""
     for i in range(ny - 1):
         for j in range(nx - 1):
             idx = i * nx + j + offset
@@ -34,7 +28,6 @@ def grid_to_triangles(nx, ny, offset=0):
 
 
 def save_stl(vertices, faces, output_path):
-    """Save vertices and triangular faces as STL."""
     stl_mesh = mesh.Mesh(np.zeros(len(faces), dtype=mesh.Mesh.dtype))
 
     for i, face in enumerate(faces):
@@ -46,7 +39,6 @@ def save_stl(vertices, faces, output_path):
 
 
 def create_topography_stl(ds, output_path, vertical_offset=100):
-    """Create a solid topography STL with a flat base."""
     thk = np.asarray(ds.variables["thk"][:])
     usurf = np.asarray(ds.variables["usurf"][:])
 
@@ -62,58 +54,36 @@ def create_topography_stl(ds, output_path, vertical_offset=100):
     Z -= np.nanmin(Z)
     Z += vertical_offset
 
-    top_vertices = np.column_stack(
-        (X.flatten(), Y.flatten(), Z)
-    ).astype(np.float32)
-
-    bottom_vertices = np.column_stack(
-        (X.flatten(), Y.flatten(), np.zeros_like(Z))
-    ).astype(np.float32)
+    top_vertices = np.column_stack((X.flatten(), Y.flatten(), Z)).astype(np.float32)
+    bottom_vertices = np.column_stack((X.flatten(), Y.flatten(), np.zeros_like(Z))).astype(np.float32)
 
     top_faces = list(grid_to_triangles(nx, ny, offset=0))
     bottom_faces = list(grid_to_triangles(nx, ny, offset=len(top_vertices)))
 
     wall_faces = []
 
-    # Left and right walls
+    # vertical walls
     for i in range(ny - 1):
-        # Left edge
-        top_a = i * nx
-        top_b = (i + 1) * nx
-        bot_a = top_a + len(top_vertices)
-        bot_b = top_b + len(top_vertices)
+        # left
+        a, b = i * nx, (i + 1) * nx
+        wall_faces += [[a, a + len(top_vertices), b],
+                       [b, a + len(top_vertices), b + len(top_vertices)]]
 
-        wall_faces.append([top_a, bot_a, top_b])
-        wall_faces.append([top_b, bot_a, bot_b])
+        # right
+        a, b = i * nx + (nx - 1), (i + 1) * nx + (nx - 1)
+        wall_faces += [[a, b, a + len(top_vertices)],
+                       [b, b + len(top_vertices), a + len(top_vertices)]]
 
-        # Right edge
-        top_a = i * nx + (nx - 1)
-        top_b = (i + 1) * nx + (nx - 1)
-        bot_a = top_a + len(top_vertices)
-        bot_b = top_b + len(top_vertices)
-
-        wall_faces.append([top_a, top_b, bot_a])
-        wall_faces.append([top_b, bot_b, bot_a])
-
-    # Front and back walls
     for j in range(nx - 1):
-        # Bottom edge
-        top_a = j
-        top_b = j + 1
-        bot_a = top_a + len(top_vertices)
-        bot_b = top_b + len(top_vertices)
+        # bottom
+        a, b = j, j + 1
+        wall_faces += [[a, a + len(top_vertices), b],
+                       [b, a + len(top_vertices), b + len(top_vertices)]]
 
-        wall_faces.append([top_a, bot_a, top_b])
-        wall_faces.append([top_b, bot_a, bot_b])
-
-        # Top edge
-        top_a = (ny - 1) * nx + j
-        top_b = (ny - 1) * nx + j + 1
-        bot_a = top_a + len(top_vertices)
-        bot_b = top_b + len(top_vertices)
-
-        wall_faces.append([top_a, top_b, bot_a])
-        wall_faces.append([top_b, bot_b, bot_a])
+        # top
+        a, b = (ny - 1) * nx + j, (ny - 1) * nx + j + 1
+        wall_faces += [[a, b, a + len(top_vertices)],
+                       [b, b + len(top_vertices), a + len(top_vertices)]]
 
     vertices = np.vstack((top_vertices, bottom_vertices))
     faces = np.asarray(top_faces + bottom_faces + wall_faces)
@@ -122,7 +92,6 @@ def create_topography_stl(ds, output_path, vertical_offset=100):
 
 
 def get_boundary_edges(triangles):
-    """Return all triangle edges that occur only once."""
     edge_count = defaultdict(int)
 
     for tri in triangles:
@@ -130,13 +99,11 @@ def get_boundary_edges(triangles):
             edge = tuple(sorted((tri[i], tri[(i + 1) % 3])))
             edge_count[edge] += 1
 
-    return [edge for edge, count in edge_count.items() if count == 1]
+    return [e for e, c in edge_count.items() if c == 1]
 
 
 def filter_by_edge_length(vertices, triangles, max_edge_length):
-    """Remove triangles with edges longer than max_edge_length."""
-    valid_triangles = []
-
+    valid = []
     for tri in triangles:
         a, b, c = vertices[tri]
         edges = [
@@ -144,20 +111,13 @@ def filter_by_edge_length(vertices, triangles, max_edge_length):
             np.linalg.norm(b[:2] - c[:2]),
             np.linalg.norm(c[:2] - a[:2]),
         ]
-
         if max(edges) < max_edge_length:
-            valid_triangles.append(tri)
+            valid.append(tri)
+    return np.asarray(valid)
 
-    return np.asarray(valid_triangles)
 
+def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=200.0):
 
-def create_glacier_stl(
-    ds,
-    output_path,
-    min_thickness=1.0,
-    max_edge_length=200.0,
-):
-    """Create a watertight glacier STL from surface and bed elevation."""
     thk = np.asarray(ds.variables["thk"][:])
     usurf = np.asarray(ds.variables["usurf"][:])
     topg = usurf - thk
@@ -166,101 +126,83 @@ def create_glacier_stl(
     y = np.asarray(ds.variables["y"][:])
 
     X, Y = np.meshgrid(x, y)
-    icemask = thk > min_thickness
+    mask = thk > min_thickness
 
-    contours = measure.find_contours(icemask, 0.5)
+    contours = measure.find_contours(mask, 0.5)
+    if not contours:
+        raise ValueError("No glacier found")
 
-    if len(contours) == 0:
-        raise ValueError("No glacier outline found. Check the thickness threshold.")
+    main = max(contours, key=len)
 
-    main_contour = max(contours, key=len)
+    cy = np.interp(main[:, 0], np.arange(len(y)), y)
+    cx = np.interp(main[:, 1], np.arange(len(x)), x)
 
-    contour_y = np.interp(main_contour[:, 0], np.arange(len(y)), y)
-    contour_x = np.interp(main_contour[:, 1], np.arange(len(x)), x)
+    poly = Polygon(zip(cx, cy))
 
-    glacier_polygon = Polygon(zip(contour_x, contour_y))
+    Xf, Yf = X.flatten(), Y.flatten()
+    inside = np.array([poly.contains(Point(p)) for p in zip(Xf, Yf)])
 
-    X_flat = X.flatten()
-    Y_flat = Y.flatten()
-    usurf_flat = usurf.flatten()
-    topg_flat = topg.flatten()
-    mask_flat = icemask.flatten()
+    valid = mask.flatten() & inside
 
-    points_xy = np.column_stack((X_flat, Y_flat))
+    x_v = Xf[valid]
+    y_v = Yf[valid]
+    z_top = usurf.flatten()[valid]
+    z_bot = topg.flatten()[valid]
 
-    inside_polygon = np.asarray(
-        [glacier_polygon.contains(Point(point)) for point in points_xy]
-    )
+    pts2d = np.column_stack((x_v, y_v))
+    tri = Delaunay(pts2d).simplices
 
-    valid = mask_flat & inside_polygon
+    v_top = np.column_stack((x_v, y_v, z_top))
+    v_bot = np.column_stack((x_v, y_v, z_bot))
 
-    x_valid = X_flat[valid]
-    y_valid = Y_flat[valid]
-    z_top = usurf_flat[valid]
-    z_bottom = topg_flat[valid]
+    tri_top = filter_by_edge_length(v_top, tri, max_edge_length)
+    tri_bot = filter_by_edge_length(v_bot, tri, max_edge_length)
 
-    points_2d = np.column_stack((x_valid, y_valid))
+    boundary = get_boundary_edges(tri_top)
 
-    tri = Delaunay(points_2d)
-    triangles = tri.simplices
+    n = len(v_top)
+    walls = []
 
-    vertices_top = np.column_stack((x_valid, y_valid, z_top))
-    vertices_bottom = np.column_stack((x_valid, y_valid, z_bottom))
+    for a, b in boundary:
+        walls += [[a, a + n, b],
+                  [b, a + n, b + n]]
 
-    triangles_top = filter_by_edge_length(
-        vertices_top, triangles, max_edge_length
-    )
-
-    triangles_bottom = filter_by_edge_length(
-        vertices_bottom, triangles, max_edge_length
-    )
-
-    boundary_edges = get_boundary_edges(triangles_top)
-
-    wall_triangles = []
-    n_vertices = len(vertices_top)
-
-    for a, b in boundary_edges:
-        a_bottom = a + n_vertices
-        b_bottom = b + n_vertices
-
-        wall_triangles.append([a, a_bottom, b])
-        wall_triangles.append([b, a_bottom, b_bottom])
-
-    triangles_bottom_shifted = triangles_bottom + n_vertices
-
-    vertices = np.vstack((vertices_top, vertices_bottom))
-    faces = np.vstack(
-        (
-            triangles_top,
-            triangles_bottom_shifted,
-            np.asarray(wall_triangles),
-        )
-    )
+    vertices = np.vstack((v_top, v_bot))
+    faces = np.vstack((tri_top, tri_bot + n, np.asarray(walls)))
 
     save_stl(vertices, faces, output_path)
 
 
 def main():
-    input_file = Path("Aletsch.nc")
-    output_dir = Path("STLS")
+    parser = argparse.ArgumentParser(description="Convert glacier NetCDF to STL")
+
+    parser.add_argument("input", type=str, help="Input NetCDF file")
+    parser.add_argument("--output-dir", type=str, default="STLS", help="Output directory")
+
+    parser.add_argument("--vertical-offset", type=float, default=100.0)
+    parser.add_argument("--min-thickness", type=float, default=1.0)
+    parser.add_argument("--max-edge-length", type=float, default=200.0)
+
+    args = parser.parse_args()
+
+    input_file = Path(args.input)
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
 
     with Dataset(input_file) as ds:
-        print("Available variables:")
-        print(ds.variables.keys())
+        print("Variables:", list(ds.variables.keys()))
 
         create_topography_stl(
             ds,
             output_dir / "topography.stl",
-            vertical_offset=100,
+            vertical_offset=args.vertical_offset,
         )
 
         create_glacier_stl(
             ds,
             output_dir / "glacier.stl",
-            min_thickness=1.0,
-            max_edge_length=200.0,
+            min_thickness=args.min_thickness,
+            max_edge_length=args.max_edge_length,
         )
 
 
