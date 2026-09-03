@@ -113,10 +113,11 @@ def filter_by_edge_length(vertices, triangles, max_edge_length):
         ]
         if max(edges) < max_edge_length:
             valid.append(tri)
-    return np.asarray(valid)
+
+    return np.asarray(valid, dtype=np.int64).reshape(-1, 3)
 
 
-def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=200.0):
+def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=2000.0):
 
     thk = np.asarray(ds.variables["thk"][:])
     usurf = np.asarray(ds.variables["usurf"][:])
@@ -146,10 +147,17 @@ def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=200.0
 
     x_v = Xf[valid]
     y_v = Yf[valid]
-    z_top = usurf.flatten()[valid]
+    z_top = usurf.flatten()[valid] + 50
     z_bot = topg.flatten()[valid]
 
     pts2d = np.column_stack((x_v, y_v))
+
+    if len(pts2d) < 3:
+        raise ValueError(
+            f"Not enough glacier points to triangulate. "
+            f"Found {len(pts2d)} points. Try lowering --min-thickness."
+        )
+
     tri = Delaunay(pts2d).simplices
 
     v_top = np.column_stack((x_v, y_v, z_top))
@@ -157,6 +165,12 @@ def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=200.0
 
     tri_top = filter_by_edge_length(v_top, tri, max_edge_length)
     tri_bot = filter_by_edge_length(v_bot, tri, max_edge_length)
+
+    if len(tri_top) == 0:
+        raise ValueError(
+            f"All glacier triangles were removed by --max-edge-length={max_edge_length}. "
+            f"Try increasing --max-edge-length."
+        )
 
     boundary = get_boundary_edges(tri_top)
 
@@ -167,8 +181,10 @@ def create_glacier_stl(ds, output_path, min_thickness=1.0, max_edge_length=200.0
         walls += [[a, a + n, b],
                   [b, a + n, b + n]]
 
+    wall_faces = np.asarray(walls, dtype=np.int64).reshape(-1, 3)
+
     vertices = np.vstack((v_top, v_bot))
-    faces = np.vstack((tri_top, tri_bot + n, np.asarray(walls)))
+    faces = np.vstack((tri_top, tri_bot + n, wall_faces))
 
     save_stl(vertices, faces, output_path)
 
@@ -181,7 +197,7 @@ def main():
 
     parser.add_argument("--vertical-offset", type=float, default=100.0)
     parser.add_argument("--min-thickness", type=float, default=1.0)
-    parser.add_argument("--max-edge-length", type=float, default=200.0)
+    parser.add_argument("--max-edge-length", type=float, default=100.0)
 
     args = parser.parse_args()
 
